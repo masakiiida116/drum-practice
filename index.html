@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>ドラム練習アプリ</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>🥁 ドラム練習アプリ</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab-btn active" data-tab="metronome" role="tab">メトロノーム</button>
+      <button class="tab-btn" data-tab="rhythm" role="tab">リズムパターン</button>
+      <button class="tab-btn" data-tab="sticking" role="tab">スティッキング</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ===================== METRONOME TAB ===================== -->
+    <section id="tab-metronome" class="tab-panel active">
+      <div class="card bpm-card">
+        <div class="bpm-display">
+          <span id="bpmValue">120</span>
+          <span class="bpm-unit">BPM</span>
+        </div>
+        <input type="range" id="bpmSlider" min="30" max="300" value="120" />
+        <div class="bpm-controls">
+          <button id="bpmMinus" class="btn-round">−</button>
+          <input type="number" id="bpmInput" min="30" max="300" value="120" />
+          <button id="bpmPlus" class="btn-round">＋</button>
+          <button id="tapTempo" class="btn-secondary">TAP</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form-row">
+          <label for="timeSignature">拍子</label>
+          <select id="timeSignature">
+            <option value="2">2/4</option>
+            <option value="3">3/4</option>
+            <option value="4" selected>4/4</option>
+            <option value="5">5/4</option>
+            <option value="6">6/8 (2拍子×3連)</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="subdivision">サブディビジョン</label>
+          <select id="subdivision">
+            <option value="1">4分音符</option>
+            <option value="2" selected>8分音符</option>
+            <option value="3">3連符</option>
+            <option value="4">16分音符</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="accentToggle">先頭拍アクセント</label>
+          <input type="checkbox" id="accentToggle" checked />
+        </div>
+        <div class="form-row">
+          <label for="volumeSlider">音量</label>
+          <input type="range" id="volumeSlider" min="0" max="100" value="80" />
+        </div>
+      </div>
+
+      <div class="beat-lights" id="beatLights"></div>
+
+      <button id="metronomePlay" class="btn-play">▶ スタート</button>
+    </section>
+
+    <!-- ===================== RHYTHM TAB ===================== -->
+    <section id="tab-rhythm" class="tab-panel">
+      <div class="card">
+        <div class="form-row">
+          <label for="presetSelect">プリセットパターン</label>
+          <select id="presetSelect"></select>
+        </div>
+        <div class="form-row">
+          <label for="rhythmBpm">テンポ (BPM)</label>
+          <input type="range" id="rhythmBpm" min="30" max="300" value="100" />
+          <span id="rhythmBpmValue">100</span>
+        </div>
+        <div class="form-row">
+          <label for="swingType">ハネ</label>
+          <select id="swingType">
+            <option value="none">なし (ストレート)</option>
+            <option value="8th">8分ハネ</option>
+            <option value="16th">16分ハネ</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="swingAmount">ハネの強さ</label>
+          <input type="range" id="swingAmount" min="50" max="75" value="62" />
+          <span id="swingAmountValue">62%</span>
+        </div>
+      </div>
+
+      <div class="card mixer-card">
+        <div class="notation-title">ミキサー (パート別音量)</div>
+        <div id="mixerPanel" class="mixer-panel"></div>
+      </div>
+
+      <div class="grid-wrap">
+        <div id="rhythmGrid" class="rhythm-grid"></div>
+      </div>
+
+      <div class="rhythm-actions">
+        <button id="rhythmPlay" class="btn-play">▶ スタート</button>
+        <button id="rhythmClear" class="btn-secondary">クリア</button>
+      </div>
+      <p class="hint">マス目をクリックしてオリジナルパターンを作成できます。変更は自動保存されます。</p>
+
+      <div class="card notation-card">
+        <div class="notation-header">
+          <span class="notation-title">ドラム譜プレビュー(クリックで入力可)</span>
+          <div class="notation-legend">
+            <span class="legend-item"><i class="legend-dot" data-track="crash"></i>クラッシュ</span>
+            <span class="legend-item"><i class="legend-dot" data-track="ride"></i>ライド</span>
+            <span class="legend-item"><i class="legend-dot" data-track="hihatOpen"></i>ハイハットO</span>
+            <span class="legend-item"><i class="legend-dot" data-track="hihat"></i>ハイハット</span>
+            <span class="legend-item"><i class="legend-dot" data-track="tom"></i>タム</span>
+            <span class="legend-item"><i class="legend-dot" data-track="snare"></i>スネア</span>
+            <span class="legend-item"><i class="legend-dot" data-track="floortom"></i>フロアタム</span>
+            <span class="legend-item"><i class="legend-dot" data-track="kick"></i>キック</span>
+          </div>
+        </div>
+        <div class="notation-wrap">
+          <svg id="notationSvg" class="notation-svg"></svg>
+        </div>
+        <p class="hint">譜面上を直接クリックしてもノートをON/OFFできます。※簡易表記です(連桁・符尾の細かなルールは省略しています)</p>
+      </div>
+
+      <div class="card fill-card">
+        <div class="form-row">
+          <label for="fillEnabled">フィルインを有効にする</label>
+          <input type="checkbox" id="fillEnabled" />
+        </div>
+        <div class="form-row">
+          <label for="fillBars">ループ小節数</label>
+          <select id="fillBars">
+            <option value="2">2小節</option>
+            <option value="4" selected>4小節</option>
+            <option value="8">8小節</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="fillBarIndex">フィルを入れる小節</label>
+          <select id="fillBarIndex"></select>
+        </div>
+        <div class="form-row">
+          <label for="fillLength">フィルの長さ</label>
+          <select id="fillLength">
+            <option value="4">1拍</option>
+            <option value="8">2拍 (半小節)</option>
+            <option value="16" selected>1小節</option>
+            <option value="32">2小節</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="fillStyle">フィルスタイル</label>
+          <select id="fillStyle">
+            <option value="none">選択してください</option>
+            <optgroup label="スタイル別" id="fillStyleGroupStyle"></optgroup>
+            <optgroup label="有名ドラマー風" id="fillStyleGroupDrummer"></optgroup>
+          </select>
+        </div>
+        <p class="hint fill-note" id="fillDescription"></p>
+        <div class="bar-progress" id="barProgress"></div>
+        <div class="notation-wrap">
+          <svg id="fillPreviewSvg" class="notation-svg fill-preview-svg"></svg>
+        </div>
+        <div class="fill-preview-actions">
+          <button id="fillPreviewPlay" class="btn-secondary">▶ このフィルを試聴</button>
+          <button id="fillCopyToGrid" class="btn-secondary">このフィルをグリッドにコピー</button>
+        </div>
+        <p class="hint">「有名ドラマー風」は実在の曲の譜面そのものではなく、そのドラマーの奏法の特徴(スティッキングやフレージング)を再現した練習用パターンです。</p>
+      </div>
+    </section>
+
+    <!-- ===================== STICKING TAB ===================== -->
+    <section id="tab-sticking" class="tab-panel">
+      <div class="card">
+        <div class="form-row">
+          <label for="rudimentSelect">ルーディメンツ</label>
+          <select id="rudimentSelect"></select>
+        </div>
+        <div class="form-row">
+          <label for="noteValue">音価</label>
+          <select id="noteValue">
+            <option value="2">8分音符</option>
+            <option value="4" selected>16分音符</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="stickingBpm">テンポ (BPM)</label>
+          <input type="range" id="stickingBpm" min="30" max="300" value="90" />
+          <span id="stickingBpmValue">90</span>
+        </div>
+      </div>
+
+      <div class="sticking-display" id="stickingDisplay"></div>
+
+      <button id="stickingPlay" class="btn-play">▶ スタート</button>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>ドラム音源: "Pearl Master Studio" サンプルパック by enoe (<a href="https://oramics.github.io/sampled/DRUMS/pearl-master-studio/" target="_blank" rel="noopener">oramics.github.io/sampled</a>, CC BY 3.0)。音声データはアプリ内に埋め込み済みで、サーバー通信はありません。</p>
+  </footer>
+
+  <script src="samples.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
