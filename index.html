@@ -3,12 +3,30 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-<title>ドラム練習アプリ</title>
+<title>Pocket Drummer</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23a13f2c'/%3E%3Ccircle cx='30' cy='36' r='15' fill='none' stroke='%23fdf6f0' stroke-width='4'/%3E%3Cline x1='18' y1='14' x2='34' y2='28' stroke='%23fdf6f0' stroke-width='4' stroke-linecap='round'/%3E%3Ccircle cx='34' cy='28' r='2.5' fill='%23fdf6f0'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header class="app-header">
-    <h1>🥁 ドラム練習アプリ</h1>
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <rect width="64" height="64" rx="16" fill="url(#brandGrad)" />
+        <circle cx="30" cy="36" r="15" fill="none" stroke="#fdf6f0" stroke-width="4" />
+        <line x1="18" y1="14" x2="34" y2="28" stroke="#fdf6f0" stroke-width="4" stroke-linecap="round" />
+        <circle cx="34" cy="28" r="2.5" fill="#fdf6f0" />
+        <defs>
+          <linearGradient id="brandGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#a13f2c" />
+            <stop offset="1" stop-color="#5c3a52" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div class="brand-text">
+        <h1>Pocket Drummer</h1>
+        <p class="brand-sub">ドラム練習アプリ</p>
+      </div>
+    </div>
     <nav class="tabs" role="tablist">
       <button class="tab-btn active" data-tab="metronome" role="tab">メトロノーム</button>
       <button class="tab-btn" data-tab="rhythm" role="tab">リズムパターン</button>
@@ -26,9 +44,13 @@
         </div>
         <input type="range" id="bpmSlider" min="30" max="300" value="120" />
         <div class="bpm-controls">
-          <button id="bpmMinus" class="btn-round">−</button>
+          <button id="bpmMinus" class="btn-round" aria-label="テンポを下げる">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+          </button>
           <input type="number" id="bpmInput" min="30" max="300" value="120" />
-          <button id="bpmPlus" class="btn-round">＋</button>
+          <button id="bpmPlus" class="btn-round" aria-label="テンポを上げる">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" /></svg>
+          </button>
           <button id="tapTempo" class="btn-secondary">TAP</button>
         </div>
       </div>
@@ -58,6 +80,15 @@
           <input type="checkbox" id="accentToggle" checked />
         </div>
         <div class="form-row">
+          <label for="metronomeTimbre">音色</label>
+          <select id="metronomeTimbre">
+            <option value="default">クリック</option>
+            <option value="wood">ウッドブロック</option>
+            <option value="cowbell">カウベル</option>
+            <option value="beep">ビープ</option>
+          </select>
+        </div>
+        <div class="form-row">
           <label for="volumeSlider">音量</label>
           <input type="range" id="volumeSlider" min="0" max="100" value="80" />
         </div>
@@ -65,16 +96,16 @@
 
       <div class="beat-lights" id="beatLights"></div>
 
-      <button id="metronomePlay" class="btn-play">▶ スタート</button>
+      <button id="metronomePlay" class="btn-play">
+        <svg class="btn-icon icon-play" viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>
+        <svg class="btn-icon icon-stop" viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg>
+        <span class="btn-label">スタート</span>
+      </button>
     </section>
 
     <!-- ===================== RHYTHM TAB ===================== -->
     <section id="tab-rhythm" class="tab-panel">
       <div class="card">
-        <div class="form-row">
-          <label for="presetSelect">プリセットパターン</label>
-          <select id="presetSelect"></select>
-        </div>
         <div class="form-row">
           <label for="rhythmBpm">テンポ (BPM)</label>
           <input type="range" id="rhythmBpm" min="30" max="300" value="100" />
@@ -100,19 +131,38 @@
         <div id="mixerPanel" class="mixer-panel"></div>
       </div>
 
-      <div class="grid-wrap">
+      <button id="rhythmPlay" class="btn-play">
+        <svg class="btn-icon icon-play" viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>
+        <svg class="btn-icon icon-stop" viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg>
+        <span class="btn-label">全体を再生</span>
+      </button>
+      <p class="hint">グルーヴとフィルはどちらも常にそのまま編集できます。全体再生中は、今鳴っている方のグリッド・譜面が光ります。</p>
+
+      <!-- ---- GROOVE ---- -->
+      <div class="section-heading mode-groove">グルーヴ</div>
+      <div class="card">
+        <div class="form-row">
+          <label for="presetSelect">プリセットパターン</label>
+          <select id="presetSelect"></select>
+        </div>
+      </div>
+
+      <div class="grid-wrap mode-groove" id="grooveGridWrap">
         <div id="rhythmGrid" class="rhythm-grid"></div>
       </div>
 
       <div class="rhythm-actions">
-        <button id="rhythmPlay" class="btn-play">▶ スタート</button>
+        <button id="groovePreviewPlay" class="btn-secondary">
+          <svg class="btn-icon-inline" viewBox="0 0 24 24" width="14" height="14"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>
+          グルーヴだけ試聴
+        </button>
         <button id="rhythmClear" class="btn-secondary">クリア</button>
       </div>
       <p class="hint">マス目をクリックしてオリジナルパターンを作成できます。変更は自動保存されます。</p>
 
-      <div class="card notation-card">
+      <div class="card notation-card mode-groove" id="grooveNotationCard">
         <div class="notation-header">
-          <span class="notation-title">ドラム譜プレビュー(クリックで入力可)</span>
+          <span class="notation-title">グルーヴ譜面(クリックで入力可)</span>
           <div class="notation-legend">
             <span class="legend-item"><i class="legend-dot" data-track="crash"></i>クラッシュ</span>
             <span class="legend-item"><i class="legend-dot" data-track="ride"></i>ライド</span>
@@ -130,6 +180,8 @@
         <p class="hint">譜面上を直接クリックしてもノートをON/OFFできます。※簡易表記です(連桁・符尾の細かなルールは省略しています)</p>
       </div>
 
+      <!-- ---- FILL ---- -->
+      <div class="section-heading mode-fill">フィル</div>
       <div class="card fill-card">
         <div class="form-row">
           <label for="fillEnabled">フィルインを有効にする</label>
@@ -157,23 +209,48 @@
           </select>
         </div>
         <div class="form-row">
-          <label for="fillStyle">フィルスタイル</label>
+          <label for="fillStyle">フィルスタイルを読み込む</label>
           <select id="fillStyle">
-            <option value="none">選択してください</option>
+            <option value="none">空(オリジナルを作る)</option>
             <optgroup label="スタイル別" id="fillStyleGroupStyle"></optgroup>
             <optgroup label="有名ドラマー風" id="fillStyleGroupDrummer"></optgroup>
           </select>
         </div>
         <p class="hint fill-note" id="fillDescription"></p>
         <div class="bar-progress" id="barProgress"></div>
+      </div>
+
+      <div class="grid-wrap mode-fill" id="fillGridWrap">
+        <div id="fillGrid" class="rhythm-grid"></div>
+      </div>
+
+      <div class="rhythm-actions">
+        <button id="fillPreviewPlay" class="btn-secondary">
+          <svg class="btn-icon-inline" viewBox="0 0 24 24" width="14" height="14"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>
+          フィルだけ試聴
+        </button>
+        <button id="fillClearBtn" class="btn-secondary">クリア</button>
+      </div>
+      <p class="hint">マス目をクリックして自由に編集できます。「有名ドラマー風」は実在の曲の譜面そのものではなく、そのドラマーの奏法の特徴を再現した練習用パターンです。</p>
+
+      <div class="card notation-card mode-fill" id="fillNotationCard">
+        <div class="notation-header">
+          <span class="notation-title">フィル譜面(クリックで入力可)</span>
+          <div class="notation-legend">
+            <span class="legend-item"><i class="legend-dot" data-track="crash"></i>クラッシュ</span>
+            <span class="legend-item"><i class="legend-dot" data-track="ride"></i>ライド</span>
+            <span class="legend-item"><i class="legend-dot" data-track="hihatOpen"></i>ハイハットO</span>
+            <span class="legend-item"><i class="legend-dot" data-track="hihat"></i>ハイハット</span>
+            <span class="legend-item"><i class="legend-dot" data-track="tom"></i>タム</span>
+            <span class="legend-item"><i class="legend-dot" data-track="snare"></i>スネア</span>
+            <span class="legend-item"><i class="legend-dot" data-track="floortom"></i>フロアタム</span>
+            <span class="legend-item"><i class="legend-dot" data-track="kick"></i>キック</span>
+          </div>
+        </div>
         <div class="notation-wrap">
-          <svg id="fillPreviewSvg" class="notation-svg fill-preview-svg"></svg>
+          <svg id="fillNotationSvg" class="notation-svg"></svg>
         </div>
-        <div class="fill-preview-actions">
-          <button id="fillPreviewPlay" class="btn-secondary">▶ このフィルを試聴</button>
-          <button id="fillCopyToGrid" class="btn-secondary">このフィルをグリッドにコピー</button>
-        </div>
-        <p class="hint">「有名ドラマー風」は実在の曲の譜面そのものではなく、そのドラマーの奏法の特徴(スティッキングやフレージング)を再現した練習用パターンです。</p>
+        <p class="hint">短いフィルの長さを選んでいる場合、使われない前半部分はグレーアウトされます。</p>
       </div>
     </section>
 
@@ -200,7 +277,11 @@
 
       <div class="sticking-display" id="stickingDisplay"></div>
 
-      <button id="stickingPlay" class="btn-play">▶ スタート</button>
+      <button id="stickingPlay" class="btn-play">
+        <svg class="btn-icon icon-play" viewBox="0 0 24 24" width="18" height="18"><path d="M8 5.5v13l11-6.5z" fill="currentColor" /></svg>
+        <svg class="btn-icon icon-stop" viewBox="0 0 24 24" width="18" height="18"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" /></svg>
+        <span class="btn-label">スタート</span>
+      </button>
     </section>
   </main>
 

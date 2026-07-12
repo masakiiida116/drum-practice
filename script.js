@@ -232,8 +232,32 @@ class AudioEngine {
     }, cleanupMs);
   }
 
-  playClick(time, accent) {
+  playClick(time, accent, timbre = "default") {
     const ctx = this.ctx;
+    if (timbre === "wood") {
+      this._karplusHit(time, {
+        freq: accent ? 1100 : 850,
+        decay: 0.05,
+        peak: accent ? 0.9 : 0.6,
+        damping: 3500,
+        feedback: 0.65,
+      });
+      return;
+    }
+    if (timbre === "cowbell") {
+      this._cowbellHit(time, accent ? 0.7 : 0.5, accent);
+      return;
+    }
+    if (timbre === "beep") {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = accent ? 2200 : 1500;
+      const gain = this._envGain(time, 0.002, accent ? 0.07 : 0.045, accent ? 0.55 : 0.35);
+      osc.connect(gain).connect(this.masterGain);
+      osc.start(time);
+      osc.stop(time + 0.1);
+      return;
+    }
     const osc = ctx.createOscillator();
     osc.type = "sine";
     osc.frequency.value = accent ? 1600 : 1000;
@@ -243,8 +267,26 @@ class AudioEngine {
     osc.stop(time + 0.1);
   }
 
-  playSubClick(time) {
+  playSubClick(time, timbre = "default") {
     const ctx = this.ctx;
+    if (timbre === "wood") {
+      this._karplusHit(time, { freq: 1400, decay: 0.03, peak: 0.35, damping: 4000, feedback: 0.55 });
+      return;
+    }
+    if (timbre === "cowbell") {
+      this._cowbellHit(time, 0.25, false);
+      return;
+    }
+    if (timbre === "beep") {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = 1900;
+      const gain = this._envGain(time, 0.002, 0.025, 0.2);
+      osc.connect(gain).connect(this.masterGain);
+      osc.start(time);
+      osc.stop(time + 0.06);
+      return;
+    }
     const osc = ctx.createOscillator();
     osc.type = "sine";
     osc.frequency.value = 1800;
@@ -252,6 +294,30 @@ class AudioEngine {
     osc.connect(gain).connect(this.masterGain);
     osc.start(time);
     osc.stop(time + 0.05);
+  }
+
+  // Classic 808/909-style cowbell: two square oscillators at a fixed ratio,
+  // summed and bandpassed.
+  _cowbellHit(time, peak, accent) {
+    const ctx = this.ctx;
+    const f1 = accent ? 900 : 800;
+    const f2 = f1 * 1.48;
+    const sum = ctx.createGain();
+    sum.gain.value = 0.5;
+    [f1, f2].forEach((f) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = f;
+      osc.connect(sum);
+      osc.start(time);
+      osc.stop(time + 0.15);
+    });
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.value = 1500;
+    bp.Q.value = 1;
+    const env = this._envGain(time, 0.001, accent ? 0.12 : 0.08, peak);
+    sum.connect(bp).connect(env).connect(this.masterGain);
   }
 
   _synthKick(time) {
@@ -545,6 +611,24 @@ class Scheduler {
 }
 
 /* ============================================================
+   Range slider fill (visual progress track — see input[type="range"] in CSS)
+   ============================================================ */
+function updateRangeFill(el) {
+  const min = parseFloat(el.min || "0");
+  const max = parseFloat(el.max || "100");
+  const val = parseFloat(el.value);
+  const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+  el.style.setProperty("--fill", `${pct}%`);
+}
+
+function bindRangeFill(el) {
+  updateRangeFill(el);
+  el.addEventListener("input", () => updateRangeFill(el));
+}
+
+document.querySelectorAll('input[type="range"]').forEach(bindRangeFill);
+
+/* ============================================================
    Tab switching
    ============================================================ */
 document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -563,6 +647,14 @@ function stopAllPlayers() {
   stickingStop();
 }
 
+// Play/stop buttons hold icon <svg> children now, so update just the label
+// span instead of overwriting the whole button with textContent.
+function setPlayLabel(btn, text) {
+  const label = btn.querySelector(".btn-label");
+  if (label) label.textContent = text;
+  else btn.textContent = text;
+}
+
 /* ============================================================
    METRONOME
    ============================================================ */
@@ -575,6 +667,7 @@ const tapTempoBtn = document.getElementById("tapTempo");
 const timeSignatureSel = document.getElementById("timeSignature");
 const subdivisionSel = document.getElementById("subdivision");
 const accentToggle = document.getElementById("accentToggle");
+const metronomeTimbreSel = document.getElementById("metronomeTimbre");
 const volumeSlider = document.getElementById("volumeSlider");
 const beatLights = document.getElementById("beatLights");
 const metronomePlayBtn = document.getElementById("metronomePlay");
@@ -582,12 +675,17 @@ const metronomePlayBtn = document.getElementById("metronomePlay");
 let metronomeBpm = 120;
 let metronomeScheduler = null;
 let metronomeBeatEls = [];
+let metronomeTimbre = localStorage.getItem("drumapp_metronome_timbre") || "default";
+metronomeTimbreSel.value = metronomeTimbre;
 
 function setBpm(v, { syncSlider = true, syncInput = true } = {}) {
   v = Math.min(300, Math.max(30, Math.round(v)));
   metronomeBpm = v;
   bpmValue.textContent = v;
-  if (syncSlider) bpmSlider.value = v;
+  if (syncSlider) {
+    bpmSlider.value = v;
+    updateRangeFill(bpmSlider);
+  }
   if (syncInput) bpmInput.value = v;
   if (metronomeScheduler) {
     metronomeScheduler.setStepDuration(stepDurationForMetronome());
@@ -630,6 +728,10 @@ timeSignatureSel.addEventListener("change", () => {
 });
 subdivisionSel.addEventListener("change", reconfigureMetronomeScheduler);
 volumeSlider.addEventListener("input", () => audioEngine.setVolume(volumeSlider.value / 100));
+metronomeTimbreSel.addEventListener("change", () => {
+  metronomeTimbre = metronomeTimbreSel.value;
+  localStorage.setItem("drumapp_metronome_timbre", metronomeTimbre);
+});
 
 let tapTimes = [];
 tapTempoBtn.addEventListener("click", () => {
@@ -652,10 +754,10 @@ function metronomeOnStep(step, time) {
 
   if (isBeat) {
     const accent = accentToggle.checked && beatIndex === 0;
-    audioEngine.playClick(time, accent);
+    audioEngine.playClick(time, accent, metronomeTimbre);
     flashBeatLight(beatIndex, time);
   } else {
-    audioEngine.playSubClick(time);
+    audioEngine.playSubClick(time, metronomeTimbre);
   }
 }
 
@@ -678,7 +780,7 @@ async function metronomeStart() {
     secondsPerStep: stepDurationForMetronome(),
   });
   metronomeScheduler.start();
-  metronomePlayBtn.textContent = "■ ストップ";
+  setPlayLabel(metronomePlayBtn, "ストップ");
   metronomePlayBtn.classList.add("playing");
 }
 
@@ -688,7 +790,7 @@ function metronomeStop() {
     metronomeScheduler = null;
   }
   metronomeBeatEls.forEach((el) => el.classList.remove("on"));
-  metronomePlayBtn.textContent = "▶ スタート";
+  setPlayLabel(metronomePlayBtn, "スタート");
   metronomePlayBtn.classList.remove("playing");
 }
 
@@ -1042,6 +1144,109 @@ const FILLS = {
       snare: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1],
     },
   },
+  keith_moon: {
+    label: "ムーン風 (カオティック)",
+    group: "drummer",
+    description: "クラッシュ2発とタム/スネア/キックが同時多発的に暴れる、あふれ出すような破天荒フィル。",
+    pattern: {
+      crash: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+      tom: [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0],
+      floortom: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+      snare: [0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0],
+      kick: [1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+    },
+  },
+  phil_collins: {
+    label: "コリンズ風 (ビッグタム)",
+    group: "drummer",
+    description: "ハイタムとフロアタムの8分音符を交互に鳴らす、ゲートリバーブ的な太いタムサウンドが映る定番フレーズ。",
+    pattern: {
+      tom: [1, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      floortom: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+      kick: [1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+    },
+  },
+  ginger_baker: {
+    label: "ベイカー風 (ポリリズム)",
+    group: "drummer",
+    description: "3ステップごとにハイタムとフロアタムを行き来する、アフロビート由来のポリリズミックなフレーズ。",
+    pattern: {
+      tom: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+      floortom: [0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+      kick: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    },
+  },
+  ringo_starr: {
+    label: "リンゴ・スター風 (シンプル)",
+    group: "drummer",
+    description: "音数を極限まで削った、必要最小限だけのタスティな一打。「引き算のフィル」の好例。",
+    pattern: {
+      snare: [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+      tom: [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+      kick: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    },
+  },
+  carter_beauford: {
+    label: "ボーフォード風 (シンコペーション)",
+    group: "drummer",
+    description: "キック/スネア/タムが複雑に絡み合う、テクニカルで密度の高いシンコペーションフィル。",
+    pattern: {
+      kick: [1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0],
+      snare: [0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0],
+      tom: [0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1],
+    },
+  },
+  danny_carey: {
+    label: "キャリー風 (変拍子ポリリズム)",
+    group: "drummer",
+    description: "5ステップ間隔のキックを軸に、タムをずらして重ねるプログレメタル的なポリリズムフィル。",
+    pattern: {
+      kick: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      tom: [0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0],
+      floortom: [0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0],
+    },
+  },
+  zigaboo_modeliste: {
+    label: "モデリステ風 (ニューオーリンズファンク)",
+    group: "drummer",
+    description: "キックとスネアが裏拍で絡み合う、セカンドライン由来の粘っこいシンコペーション。",
+    pattern: {
+      kick: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0],
+      snare: [0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0],
+    },
+  },
+  clyde_stubblefield: {
+    label: "スタブルフィールド風 (ファンクシンコペーション)",
+    group: "drummer",
+    description: "スネアを密に敷き詰める、ファンクドラミングの手数の多さを感じさせるグルーヴィーなフィル。",
+    pattern: {
+      kick: [1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+      snare: [0, 0, 1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 1],
+    },
+  },
+  akira_jimbo: {
+    label: "神保彰風 (テクニカルフュージョン)",
+    group: "drummer",
+    description: "キット全体を高速で駆け巡る、手数の多い正確無比なフュージョン系テクニカルフィル。",
+    pattern: {
+      kick: [1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0],
+      snare: [0, 1, 0, 1, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 1],
+      tom: [1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0],
+      floortom: [0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0],
+    },
+  },
+  tony_williams: {
+    label: "トニー・ウィリアムス風 (ジャズフュージョン)",
+    group: "drummer",
+    description: "タムの連打から始まり、スネア/フロアタムで畳みかけてクラッシュで着地する、流麗で技巧的なフィル。",
+    pattern: {
+      tom: [1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      snare: [0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+      floortom: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1],
+      crash: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+      kick: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    },
+  },
 };
 
 // Normalize every fill so all 8 track keys exist (missing ones default to silence).
@@ -1051,14 +1256,23 @@ Object.keys(FILLS).forEach((key) => {
 
 const presetSelect = document.getElementById("presetSelect");
 const rhythmGridEl = document.getElementById("rhythmGrid");
+const fillGridEl = document.getElementById("fillGrid");
 const rhythmBpmSlider = document.getElementById("rhythmBpm");
 const rhythmBpmValue = document.getElementById("rhythmBpmValue");
 const rhythmPlayBtn = document.getElementById("rhythmPlay");
 const rhythmClearBtn = document.getElementById("rhythmClear");
+const fillClearBtn = document.getElementById("fillClearBtn");
+const groovePreviewPlayBtn = document.getElementById("groovePreviewPlay");
+const fillPreviewPlayBtn = document.getElementById("fillPreviewPlay");
 const swingTypeSel = document.getElementById("swingType");
 const swingAmountSlider = document.getElementById("swingAmount");
 const swingAmountValue = document.getElementById("swingAmountValue");
 const notationSvg = document.getElementById("notationSvg");
+const fillNotationSvg = document.getElementById("fillNotationSvg");
+const grooveGridWrapEl = document.getElementById("grooveGridWrap");
+const grooveNotationCardEl = document.getElementById("grooveNotationCard");
+const fillGridWrapEl = document.getElementById("fillGridWrap");
+const fillNotationCardEl = document.getElementById("fillNotationCard");
 const fillEnabledCb = document.getElementById("fillEnabled");
 const fillBarsSel = document.getElementById("fillBars");
 const fillBarIndexSel = document.getElementById("fillBarIndex");
@@ -1068,17 +1282,16 @@ const fillStyleGroupStyle = document.getElementById("fillStyleGroupStyle");
 const fillStyleGroupDrummer = document.getElementById("fillStyleGroupDrummer");
 const fillDescriptionEl = document.getElementById("fillDescription");
 const barProgressEl = document.getElementById("barProgress");
-const fillPreviewSvg = document.getElementById("fillPreviewSvg");
-const fillPreviewPlayBtn = document.getElementById("fillPreviewPlay");
-const fillCopyBtn = document.getElementById("fillCopyToGrid");
 const mixerPanelEl = document.getElementById("mixerPanel");
 
 let rhythmPattern = null;
+let fillPattern = null;
 let rhythmScheduler = null;
 let rhythmBpm = 100;
 let swingType = "none";
 let swingAmount = 62;
 let notationPlayheadTimer = null;
+let fillNotationPlayheadTimer = null;
 let fillEnabled = false;
 let fillBars = 4;
 let fillBarIndex = 4;
@@ -1112,6 +1325,7 @@ function buildMixer() {
     const dot = document.createElement("span");
     dot.className = "mixer-dot";
     dot.style.background = `var(--${track})`;
+    dot.style.color = `var(--${track})`;
 
     const label = document.createElement("span");
     label.className = "mixer-label";
@@ -1122,7 +1336,7 @@ function buildMixer() {
     slider.min = "0";
     slider.max = "150";
     slider.value = trackMixer[track];
-    slider.style.accentColor = `var(--${track})`;
+    slider.style.setProperty("--slider-color", `var(--${track})`);
 
     const valueEl = document.createElement("span");
     valueEl.className = "mixer-value";
@@ -1135,6 +1349,7 @@ function buildMixer() {
       audioEngine.setTrackVolume(track, v / 100);
       saveRhythmState();
     });
+    bindRangeFill(slider);
 
     row.append(dot, label, slider, valueEl);
     mixerPanelEl.appendChild(row);
@@ -1155,6 +1370,7 @@ function saveRhythmState() {
     "drumapp_rhythm",
     JSON.stringify({
       pattern: rhythmPattern,
+      fillPattern,
       preset: presetSelect.value,
       bpm: rhythmBpm,
       swingType,
@@ -1179,30 +1395,45 @@ function loadRhythmState() {
   }
 }
 
-function renderRhythmGrid() {
-  rhythmGridEl.innerHTML = "";
+function renderGridInto(containerEl, pattern, activeFromStep, onCellToggled) {
+  containerEl.innerHTML = "";
   TRACKS.forEach((track) => {
     const label = document.createElement("div");
     label.className = "grid-label";
     label.textContent = TRACK_LABELS[track];
-    rhythmGridEl.appendChild(label);
+    containerEl.appendChild(label);
 
     for (let step = 0; step < 16; step++) {
       const cell = document.createElement("div");
       cell.className = "grid-cell";
       if (step % 4 === 0) cell.classList.add("beat-start");
+      if (step < activeFromStep) cell.classList.add("grid-cell-inactive");
       cell.dataset.track = track;
       cell.dataset.step = step;
-      if (rhythmPattern[track][step]) cell.classList.add("active");
+      if (pattern[track][step]) cell.classList.add("active");
       cell.addEventListener("click", () => {
-        rhythmPattern[track][step] = rhythmPattern[track][step] ? 0 : 1;
+        pattern[track][step] = pattern[track][step] ? 0 : 1;
         cell.classList.toggle("active");
-        saveRhythmState();
-        renderNotation();
-        if (rhythmPattern[track][step]) auditionTrack(track);
+        onCellToggled();
+        if (pattern[track][step]) auditionTrack(track);
       });
-      rhythmGridEl.appendChild(cell);
+      containerEl.appendChild(cell);
     }
+  });
+}
+
+function renderGrooveGrid() {
+  renderGridInto(rhythmGridEl, rhythmPattern, 0, () => {
+    saveRhythmState();
+    renderGrooveNotation();
+  });
+}
+
+function renderFillGrid() {
+  const activeFromStep = fillLengthSteps < 16 ? 16 - fillLengthSteps : 0;
+  renderGridInto(fillGridEl, fillPattern, activeFromStep, () => {
+    saveRhythmState();
+    renderFillNotation();
   });
 }
 
@@ -1300,33 +1531,28 @@ function buildStaffMarkup(pattern, playheadId, showSwingLabel, activeFromStep) {
   return html;
 }
 
-function renderNotation() {
+function renderGrooveNotation() {
   if (!notationSvg || !rhythmPattern) return;
   const width = STAFF_LEFT + 16 * STAFF_STEP_W + 16;
   notationSvg.setAttribute("viewBox", `0 0 ${width} 132`);
   notationSvg.innerHTML = buildStaffMarkup(rhythmPattern, "notationPlayhead", true, 0);
 }
 
-function renderFillPreview() {
-  if (!fillPreviewSvg) return;
+function renderFillNotation() {
+  if (!fillNotationSvg || !fillPattern) return;
   const width = STAFF_LEFT + 16 * STAFF_STEP_W + 16;
-  fillPreviewSvg.setAttribute("viewBox", `0 0 ${width} 132`);
-  const fill = FILLS[fillStyleKey];
-  if (!fill) {
-    fillPreviewSvg.innerHTML = "";
-    return;
-  }
+  fillNotationSvg.setAttribute("viewBox", `0 0 ${width} 132`);
   const activeFromStep = fillLengthSteps < 16 ? 16 - fillLengthSteps : 0;
-  let html = buildStaffMarkup(fill.pattern, "fillPreviewPlayhead", false, activeFromStep);
+  let html = buildStaffMarkup(fillPattern, "fillNotationPlayhead", true, activeFromStep);
   if (fillLengthSteps > 16) {
-    html += `<text class="staff-swing-label" x="${STAFF_LEFT}" y="128">🔁 ${fillLengthSteps / 16}小節ぶん (このパターンを繰り返します)</text>`;
+    html += `<text class="staff-swing-label" x="${STAFF_LEFT}" y="118">🔁 ${fillLengthSteps / 16}小節ぶん (このパターンを繰り返します)</text>`;
   }
-  fillPreviewSvg.innerHTML = html;
+  fillNotationSvg.innerHTML = html;
 }
 
-function svgPointFromEvent(evt) {
-  const rect = notationSvg.getBoundingClientRect();
-  const vb = notationSvg.viewBox.baseVal;
+function svgPointFromEvent(evt, svgEl) {
+  const rect = svgEl.getBoundingClientRect();
+  const vb = svgEl.viewBox.baseVal;
   return {
     x: ((evt.clientX - rect.left) / rect.width) * vb.width + vb.x,
     y: ((evt.clientY - rect.top) / rect.height) * vb.height + vb.y,
@@ -1361,14 +1587,26 @@ function nearestTrack(y) {
 
 notationSvg.addEventListener("click", (evt) => {
   if (!rhythmPattern) return;
-  const pt = svgPointFromEvent(evt);
+  const pt = svgPointFromEvent(evt, notationSvg);
   const step = nearestStep(pt.x);
   const track = nearestTrack(pt.y);
   rhythmPattern[track][step] = rhythmPattern[track][step] ? 0 : 1;
-  renderRhythmGrid();
-  renderNotation();
+  renderGrooveGrid();
+  renderGrooveNotation();
   saveRhythmState();
   if (rhythmPattern[track][step]) auditionTrack(track);
+});
+
+fillNotationSvg.addEventListener("click", (evt) => {
+  if (!fillPattern) return;
+  const pt = svgPointFromEvent(evt, fillNotationSvg);
+  const step = nearestStep(pt.x);
+  const track = nearestTrack(pt.y);
+  fillPattern[track][step] = fillPattern[track][step] ? 0 : 1;
+  renderFillGrid();
+  renderFillNotation();
+  saveRhythmState();
+  if (fillPattern[track][step]) auditionTrack(track);
 });
 
 function highlightNotationPlayhead(step) {
@@ -1383,21 +1621,51 @@ function highlightNotationPlayhead(step) {
   notationPlayheadTimer = setTimeout(() => line.classList.remove("on"), holdMs);
 }
 
-function swingDelayForStep(step, stepDur) {
-  return swingOffsetSteps(step) * stepDur;
-}
-
-function highlightFillPreviewPlayhead(step) {
-  const line = document.getElementById("fillPreviewPlayhead");
+function highlightFillNotationPlayhead(step) {
+  const line = document.getElementById("fillNotationPlayhead");
   if (!line) return;
   const x = noteX(step);
   line.setAttribute("x1", x);
   line.setAttribute("x2", x);
   line.classList.add("on");
+  clearTimeout(fillNotationPlayheadTimer);
+  const holdMs = Math.max(40, (60 / rhythmBpm / 4) * 1000 * 0.9);
+  fillNotationPlayheadTimer = setTimeout(() => line.classList.remove("on"), holdMs);
 }
 
-function clearFillPreviewPlayhead() {
-  const line = document.getElementById("fillPreviewPlayhead");
+function swingDelayForStep(step, stepDur) {
+  return swingOffsetSteps(step) * stepDur;
+}
+
+function highlightPlayhead(step) {
+  rhythmGridEl.querySelectorAll(".grid-cell.playhead").forEach((c) => c.classList.remove("playhead"));
+  rhythmGridEl.querySelectorAll(`.grid-cell[data-step="${step}"]`).forEach((c) => c.classList.add("playhead"));
+}
+
+function highlightFillGridPlayhead(step) {
+  fillGridEl.querySelectorAll(".grid-cell.playhead").forEach((c) => c.classList.remove("playhead"));
+  fillGridEl.querySelectorAll(`.grid-cell[data-step="${step}"]`).forEach((c) => c.classList.add("playhead"));
+}
+
+function highlightGroovePlayhead(step) {
+  highlightPlayhead(step);
+  highlightNotationPlayhead(step);
+}
+
+function highlightFillPlayhead(step) {
+  highlightFillGridPlayhead(step);
+  highlightFillNotationPlayhead(step);
+}
+
+function clearGroovePlayhead() {
+  rhythmGridEl.querySelectorAll(".grid-cell.playhead").forEach((c) => c.classList.remove("playhead"));
+  const line = document.getElementById("notationPlayhead");
+  if (line) line.classList.remove("on");
+}
+
+function clearFillPlayhead() {
+  fillGridEl.querySelectorAll(".grid-cell.playhead").forEach((c) => c.classList.remove("playhead"));
+  const line = document.getElementById("fillNotationPlayhead");
   if (line) line.classList.remove("on");
 }
 
@@ -1426,7 +1694,7 @@ function renderBarProgress(currentBar) {
   for (let i = 1; i <= n; i++) {
     const dot = document.createElement("div");
     dot.className = "bar-dot";
-    if (fillEnabled && fillStyleKey !== "none" && i === fillBarIndex) dot.classList.add("fill-bar");
+    if (fillEnabled && i === fillBarIndex) dot.classList.add("fill-bar");
     if (i === currentBar) dot.classList.add("current");
     dot.textContent = i;
     barProgressEl.appendChild(dot);
@@ -1434,7 +1702,7 @@ function renderBarProgress(currentBar) {
 }
 
 function currentStepsPerLoop() {
-  return fillEnabled && fillStyleKey !== "none" ? fillBars * 16 : 16;
+  return fillEnabled ? fillBars * 16 : 16;
 }
 
 function reconfigureRhythmScheduler() {
@@ -1468,29 +1736,32 @@ fillBarIndexSel.addEventListener("change", () => {
 
 fillLengthSel.addEventListener("change", () => {
   fillLengthSteps = parseInt(fillLengthSel.value, 10);
-  renderFillPreview();
   renderBarProgress(0);
   reconfigureRhythmScheduler();
   saveRhythmState();
+  renderFillGrid();
+  renderFillNotation();
 });
 
+// Selecting a fill style loads it straight into the editable fill pattern —
+// the same way choosing a groove preset loads it into rhythmPattern. It's
+// always visible below, so this doubles as an instant visual preview.
 fillStyleSel.addEventListener("change", () => {
   fillStyleKey = fillStyleSel.value;
+  const preset = FILLS[fillStyleKey];
+  fillPattern = clonePattern(preset ? preset.pattern : null);
   updateFillDescription();
-  renderFillPreview();
   renderBarProgress(0);
   reconfigureRhythmScheduler();
   saveRhythmState();
+  renderFillGrid();
+  renderFillNotation();
 });
 
-let fillPreviewCleanupTimer = null;
-
-// Plays the selected fill's 16 steps once, on its own — independent of the
-// main scheduler/loop, so you can quickly A/B fills without enabling fill
-// mode, picking a bar, and waiting through the surrounding groove.
-async function previewFillOnce() {
-  const fill = FILLS[fillStyleKey];
-  if (!fill) return;
+// Plays a pattern's 16 steps once, on its own — independent of the main
+// scheduler/loop — highlighting the given section as it goes.
+async function previewPattern(pattern, highlightFn) {
+  if (!pattern) return 0;
   await audioEngine.ensureContext();
   audioEngine.setVolume(volumeSlider.value / 100);
   const stepDur = 60 / rhythmBpm / 4;
@@ -1499,40 +1770,65 @@ async function previewFillOnce() {
   for (let step = 0; step < 16; step++) {
     const t = startTime + step * stepDur + swingDelayForStep(step, stepDur);
     TRACKS.forEach((track) => {
-      if (fill.pattern[track][step]) TRACK_SOUND[track](t);
+      if (pattern[track][step]) TRACK_SOUND[track](t);
     });
     const delay = Math.max(0, (t - audioEngine.ctx.currentTime) * 1000);
-    setTimeout(() => highlightFillPreviewPlayhead(step), delay);
+    setTimeout(() => highlightFn(step), delay);
   }
-  clearTimeout(fillPreviewCleanupTimer);
-  fillPreviewCleanupTimer = setTimeout(() => clearFillPreviewPlayhead(), (leadIn + 16 * stepDur + 0.15) * 1000);
+  return (leadIn + 16 * stepDur + 0.15) * 1000;
 }
 
-fillPreviewPlayBtn.addEventListener("click", () => {
-  previewFillOnce();
+let groovePreviewCleanupTimer = null;
+groovePreviewPlayBtn.addEventListener("click", async () => {
+  setSectionActive("groove");
+  const ms = await previewPattern(rhythmPattern, highlightGroovePlayhead);
+  clearTimeout(groovePreviewCleanupTimer);
+  groovePreviewCleanupTimer = setTimeout(() => {
+    clearGroovePlayhead();
+    setSectionActive(null);
+  }, ms);
 });
 
-fillCopyBtn.addEventListener("click", () => {
-  const fill = FILLS[fillStyleKey];
-  if (!fill) return;
-  rhythmPattern = clonePattern(fill.pattern);
-  renderRhythmGrid();
-  renderNotation();
-  saveRhythmState();
+let fillPreviewCleanupTimer = null;
+fillPreviewPlayBtn.addEventListener("click", async () => {
+  setSectionActive("fill");
+  const ms = await previewPattern(fillPattern, highlightFillPlayhead);
+  clearTimeout(fillPreviewCleanupTimer);
+  fillPreviewCleanupTimer = setTimeout(() => {
+    clearFillPlayhead();
+    setSectionActive(null);
+  }, ms);
 });
+
+function setSectionActive(section) {
+  grooveGridWrapEl.classList.toggle("section-active", section === "groove");
+  grooveNotationCardEl.classList.toggle("section-active", section === "groove");
+  fillGridWrapEl.classList.toggle("section-active", section === "fill");
+  fillNotationCardEl.classList.toggle("section-active", section === "fill");
+}
 
 presetSelect.addEventListener("change", () => {
   rhythmPattern = clonePattern(PRESETS[presetSelect.value]);
-  renderRhythmGrid();
-  renderNotation();
   saveRhythmState();
+  renderGrooveGrid();
+  renderGrooveNotation();
 });
 
 rhythmClearBtn.addEventListener("click", () => {
   rhythmPattern = clonePattern(PRESETS["空のパターン"]);
   presetSelect.value = "空のパターン";
-  renderRhythmGrid();
-  renderNotation();
+  renderGrooveGrid();
+  renderGrooveNotation();
+  saveRhythmState();
+});
+
+fillClearBtn.addEventListener("click", () => {
+  fillPattern = clonePattern(null);
+  fillStyleKey = "none";
+  fillStyleSel.value = "none";
+  updateFillDescription();
+  renderFillGrid();
+  renderFillNotation();
   saveRhythmState();
 });
 
@@ -1545,16 +1841,16 @@ rhythmBpmSlider.addEventListener("input", () => {
 
 swingTypeSel.addEventListener("change", () => {
   swingType = swingTypeSel.value;
-  renderNotation();
-  renderFillPreview();
+  renderGrooveNotation();
+  renderFillNotation();
   saveRhythmState();
 });
 
 swingAmountSlider.addEventListener("input", () => {
   swingAmount = parseInt(swingAmountSlider.value, 10);
   swingAmountValue.textContent = `${swingAmount}%`;
-  renderNotation();
-  renderFillPreview();
+  renderGrooveNotation();
+  renderFillNotation();
   saveRhythmState();
 });
 
@@ -1566,7 +1862,7 @@ function rhythmOnStep(rawStep, time) {
   let pattern = rhythmPattern;
   let patternStepIndex = rawStep;
 
-  if (fillEnabled && fillStyleKey !== "none" && FILLS[fillStyleKey]) {
+  if (fillEnabled) {
     stepInBar = rawStep % 16;
     barIndex = Math.floor(rawStep / 16) + 1;
     // Fill always ends exactly at the end of its designated bar; fillLengthSteps
@@ -1580,7 +1876,7 @@ function rhythmOnStep(rawStep, time) {
       // Spans <=16 steps use the tail of the 16-step fill pattern (most fills
       // build toward the end); longer spans (2-bar fills) repeat the pattern.
       patternStepIndex = spanLen <= 16 ? 16 - spanLen + offsetIntoFill : offsetIntoFill % 16;
-      pattern = FILLS[fillStyleKey].pattern;
+      pattern = fillPattern;
     } else {
       patternStepIndex = stepInBar;
       pattern = rhythmPattern;
@@ -1595,19 +1891,21 @@ function rhythmOnStep(rawStep, time) {
   if (stepInBar === 0 && prevBarEndedInFill) TRACK_SOUND.crash(t);
   if (stepInBar === 15) prevBarEndedInFill = inFillNow;
 
+  // Both groove and fill are always visible, so just light up whichever
+  // section is actually sounding right now and dim the other.
   const delay = Math.max(0, (t - audioEngine.ctx.currentTime) * 1000);
   setTimeout(() => {
-    highlightPlayhead(stepInBar);
-    highlightNotationPlayhead(stepInBar);
+    if (inFillNow) {
+      highlightFillPlayhead(patternStepIndex);
+      clearGroovePlayhead();
+      setSectionActive("fill");
+    } else {
+      highlightGroovePlayhead(stepInBar);
+      clearFillPlayhead();
+      setSectionActive("groove");
+    }
     renderBarProgress(barIndex);
-    if (inFillNow) highlightFillPreviewPlayhead(patternStepIndex);
-    else clearFillPreviewPlayhead();
   }, delay);
-}
-
-function highlightPlayhead(step) {
-  rhythmGridEl.querySelectorAll(".grid-cell.playhead").forEach((c) => c.classList.remove("playhead"));
-  rhythmGridEl.querySelectorAll(`.grid-cell[data-step="${step}"]`).forEach((c) => c.classList.add("playhead"));
 }
 
 async function rhythmStart() {
@@ -1620,7 +1918,7 @@ async function rhythmStart() {
     secondsPerStep: 60 / rhythmBpm / 4,
   });
   rhythmScheduler.start();
-  rhythmPlayBtn.textContent = "■ ストップ";
+  setPlayLabel(rhythmPlayBtn, "ストップ");
   rhythmPlayBtn.classList.add("playing");
 }
 
@@ -1629,12 +1927,11 @@ function rhythmStop() {
     rhythmScheduler.stop();
     rhythmScheduler = null;
   }
-  rhythmGridEl.querySelectorAll(".grid-cell.playhead").forEach((c) => c.classList.remove("playhead"));
-  const line = document.getElementById("notationPlayhead");
-  if (line) line.classList.remove("on");
-  clearFillPreviewPlayhead();
+  clearGroovePlayhead();
+  clearFillPlayhead();
+  setSectionActive(null);
   renderBarProgress(0);
-  rhythmPlayBtn.textContent = "▶ スタート";
+  setPlayLabel(rhythmPlayBtn, "全体を再生");
   rhythmPlayBtn.classList.remove("playing");
 }
 
@@ -1658,6 +1955,7 @@ rhythmPlayBtn.addEventListener("click", async () => {
     if (saved.bpm) {
       rhythmBpm = saved.bpm;
       rhythmBpmSlider.value = rhythmBpm;
+      updateRangeFill(rhythmBpmSlider);
       rhythmBpmValue.textContent = rhythmBpm;
     }
     if (saved.swingType) {
@@ -1667,6 +1965,7 @@ rhythmPlayBtn.addEventListener("click", async () => {
     if (saved.swingAmount) {
       swingAmount = saved.swingAmount;
       swingAmountSlider.value = swingAmount;
+      updateRangeFill(swingAmountSlider);
       swingAmountValue.textContent = `${swingAmount}%`;
     }
     fillEnabled = !!saved.fillEnabled;
@@ -1684,6 +1983,7 @@ rhythmPlayBtn.addEventListener("click", async () => {
       fillStyleKey = saved.fillStyleKey;
       fillStyleSel.value = fillStyleKey;
     }
+    fillPattern = saved.fillPattern ? clonePattern(saved.fillPattern) : clonePattern(null);
     if (saved.trackMixer) {
       TRACKS.forEach((t) => {
         if (typeof saved.trackMixer[t] === "number") trackMixer[t] = saved.trackMixer[t];
@@ -1691,12 +1991,14 @@ rhythmPlayBtn.addEventListener("click", async () => {
     }
   } else {
     rhythmPattern = clonePattern(PRESETS["8ビート (基本)"]);
+    fillPattern = clonePattern(null);
   }
   populateFillBarIndexOptions();
   updateFillDescription();
-  renderRhythmGrid();
-  renderNotation();
-  renderFillPreview();
+  renderGrooveGrid();
+  renderGrooveNotation();
+  renderFillGrid();
+  renderFillNotation();
   renderBarProgress(0);
   buildMixer();
 })();
@@ -1789,7 +2091,7 @@ async function stickingStart() {
     secondsPerStep: stepDurationForSticking(),
   });
   stickingScheduler.start();
-  stickingPlayBtn.textContent = "■ ストップ";
+  setPlayLabel(stickingPlayBtn, "ストップ");
   stickingPlayBtn.classList.add("playing");
 }
 
@@ -1799,7 +2101,7 @@ function stickingStop() {
     stickingScheduler = null;
   }
   stickingNoteEls.forEach((el) => el.classList.remove("current"));
-  stickingPlayBtn.textContent = "▶ スタート";
+  setPlayLabel(stickingPlayBtn, "スタート");
   stickingPlayBtn.classList.remove("playing");
 }
 
