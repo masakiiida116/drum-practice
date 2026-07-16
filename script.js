@@ -57,8 +57,28 @@ class AudioEngine {
       this.convolver.connect(this.ctx.destination);
 
       this.samplesReady = this._loadSamples();
+
+      // Some mobile browsers (older iOS Safari especially) need an actual
+      // sound played — not just resume() — inside the gesture to fully
+      // unlock audio output. A one-sample silent buffer does this inaudibly.
+      try {
+        const primer = this.ctx.createBufferSource();
+        primer.buffer = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+        primer.connect(this.ctx.destination);
+        primer.start(0);
+      } catch {
+        // best-effort nudge only — safe to ignore if unsupported
+      }
     }
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    if (this.ctx.state === "suspended") {
+      try {
+        await this.ctx.resume();
+      } catch {
+        // resume() can reject on some mobile browsers even mid-gesture;
+        // swallow it rather than let it break the caller's await chain —
+        // playback may still work, or the next tap will retry.
+      }
+    }
     await this.samplesReady;
     return this.ctx;
   }
@@ -802,8 +822,11 @@ metronomePlayBtn.addEventListener("click", async () => {
   }
   if (metronomeStarting) return;
   metronomeStarting = true;
-  await metronomeStart();
-  metronomeStarting = false;
+  try {
+    await metronomeStart();
+  } finally {
+    metronomeStarting = false;
+  }
 });
 
 buildBeatLights();
@@ -1943,8 +1966,11 @@ rhythmPlayBtn.addEventListener("click", async () => {
   }
   if (rhythmStarting) return;
   rhythmStarting = true;
-  await rhythmStart();
-  rhythmStarting = false;
+  try {
+    await rhythmStart();
+  } finally {
+    rhythmStarting = false;
+  }
 });
 
 (function initRhythm() {
@@ -2113,8 +2139,11 @@ stickingPlayBtn.addEventListener("click", async () => {
   }
   if (stickingStarting) return;
   stickingStarting = true;
-  await stickingStart();
-  stickingStarting = false;
+  try {
+    await stickingStart();
+  } finally {
+    stickingStarting = false;
+  }
 });
 
 renderSticking();
