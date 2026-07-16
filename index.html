@@ -89,6 +89,19 @@
           </select>
         </div>
         <div class="form-row">
+          <label for="metronomeSwingType">ハネ</label>
+          <select id="metronomeSwingType">
+            <option value="none">なし (ストレート)</option>
+            <option value="8th">8分ハネ</option>
+            <option value="16th">16分ハネ</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="metronomeSwingAmount">ハネの強さ</label>
+          <input type="range" id="metronomeSwingAmount" min="50" max="75" value="62" />
+          <span id="metronomeSwingAmountValue">62%</span>
+        </div>
+        <div class="form-row">
           <label for="volumeSlider">音量</label>
           <input type="range" id="volumeSlider" min="0" max="100" value="80" />
         </div>
@@ -177,7 +190,7 @@
         <div class="notation-wrap">
           <svg id="notationSvg" class="notation-svg"></svg>
         </div>
-        <p class="hint">譜面上を直接クリックしてもノートをON/OFFできます。※簡易表記です(連桁・符尾の細かなルールは省略しています)</p>
+        <p class="hint">譜面上を直接クリックしてもノートをON/OFFできます。連桁(ビーム)/旗で音価(8分・16分)を表しています。</p>
       </div>
 
       <!-- ---- FILL ---- -->
@@ -250,7 +263,7 @@
         <div class="notation-wrap">
           <svg id="fillNotationSvg" class="notation-svg"></svg>
         </div>
-        <p class="hint">短いフィルの長さを選んでいる場合、使われない前半部分はグレーアウトされます。</p>
+        <p class="hint">短いフィルの長さを選んでいる場合、使われない前半部分はグレーアウトされます。連桁/旗で音価を表しています。</p>
       </div>
     </section>
 
@@ -286,7 +299,7 @@
   </main>
 
   <footer class="app-footer">
-    <p>ドラム音源: "Pearl Master Studio" サンプルパック by enoe (<a href="https://oramics.github.io/sampled/DRUMS/pearl-master-studio/" target="_blank" rel="noopener">oramics.github.io/sampled</a>, CC BY 3.0)。音声データはアプリ内に埋め込み済みで、サーバー通信はありません。</p>
+    <p>ドラム音源: "Pearl Master Studio" サンプルパック by enoe (<a href="https://oramics.github.io/sampled/DRUMS/pearl-master-studio/" target="_blank" rel="noopener">oramics.github.io/sampled</a>, CC BY 3.0)。メトロノームのカウベル音: Roland TR-08 実機録音 by Karman_Lyne (<a href="https://freesound.org/people/Karman_Lyne/sounds/519303/" target="_blank" rel="noopener">freesound.org</a>, CC0)。音声データはアプリ内に埋め込み済みで、サーバー通信はありません。</p>
   </footer>
 
   <script src="samples.js"></script>

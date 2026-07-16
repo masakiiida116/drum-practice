@@ -39,22 +39,32 @@ class AudioEngine {
   async ensureContext() {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Final output stage — volume control for everything, dry or wet.
+      this.outputGain = this.ctx.createGain();
+      this.outputGain.gain.value = this.volume;
+      this.outputGain.connect(this.ctx.destination);
+
+      // Drum-kit bus: kit voices (via _panner) connect here and go both dry
+      // to the output AND wet through the reverb send below. Metronome
+      // clicks and sticking taps connect straight to outputGain instead,
+      // skipping this bus entirely — reverb blurs timing, which is exactly
+      // what you don't want from a click track.
       this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.value = this.volume;
-      this.masterGain.connect(this.ctx.destination);
+      this.masterGain.connect(this.outputGain);
       this.noiseBuffer = this._buildNoiseBuffer();
 
-      // Shared room reverb: the whole kit is sent through one convolver off the
-      // master bus. A synthesized decaying-noise impulse response, rather than
-      // a real room capture, but it's what turns dry one-shot hits into
-      // something that reads as "a kit in a room" instead of isolated blips.
+      // Shared room reverb for the kit only. A synthesized decaying-noise
+      // impulse response, rather than a real room capture, but it's what
+      // turns dry one-shot hits into something that reads as "a kit in a
+      // room" instead of isolated blips.
       this.reverbSend = this.ctx.createGain();
       this.reverbSend.gain.value = 0.22;
       this.convolver = this.ctx.createConvolver();
       this.convolver.buffer = this._buildImpulseResponse();
       this.masterGain.connect(this.reverbSend);
       this.reverbSend.connect(this.convolver);
-      this.convolver.connect(this.ctx.destination);
+      this.convolver.connect(this.outputGain);
 
       this.samplesReady = this._loadSamples();
 
@@ -83,12 +93,16 @@ class AudioEngine {
     return this.ctx;
   }
 
-  // Decode the embedded real drum samples (see samples.js) into AudioBuffers.
-  // Falls back silently to synthesis per-voice if a sample fails to decode.
+  // Decode the embedded real drum/metronome samples (see samples.js) into
+  // AudioBuffers. Falls back silently to synthesis per-voice if a sample
+  // fails to decode.
   async _loadSamples() {
-    if (typeof DRUM_SAMPLES === "undefined") return;
+    const sources = {
+      ...(typeof DRUM_SAMPLES === "undefined" ? {} : DRUM_SAMPLES),
+      ...(typeof METRONOME_SAMPLES === "undefined" ? {} : METRONOME_SAMPLES),
+    };
     await Promise.all(
-      Object.entries(DRUM_SAMPLES).map(async ([key, base64]) => {
+      Object.entries(sources).map(async ([key, base64]) => {
         try {
           const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
           this.buffers[key] = await this.ctx.decodeAudioData(bytes.buffer);
@@ -150,7 +164,7 @@ class AudioEngine {
 
   setVolume(v) {
     this.volume = v;
-    if (this.masterGain) this.masterGain.gain.value = v;
+    if (this.outputGain) this.outputGain.gain.value = v;
   }
 
   _buildNoiseBuffer() {
@@ -252,28 +266,31 @@ class AudioEngine {
     }, cleanupMs);
   }
 
+  // Metronome clicks intentionally connect straight to outputGain, bypassing
+  // the kit's reverb bus — a click track needs to stay dry and precise.
   playClick(time, accent, timbre = "default") {
     const ctx = this.ctx;
     if (timbre === "wood") {
       this._karplusHit(time, {
         freq: accent ? 1100 : 850,
         decay: 0.05,
-        peak: accent ? 0.9 : 0.6,
+        peak: accent ? 1.2 : 0.9,
         damping: 3500,
         feedback: 0.65,
+        destination: this.outputGain,
       });
       return;
     }
     if (timbre === "cowbell") {
-      this._cowbellHit(time, accent ? 0.7 : 0.5, accent);
+      this._cowbellHit(time, accent ? 1.1 : 0.85, accent, this.outputGain);
       return;
     }
     if (timbre === "beep") {
       const osc = ctx.createOscillator();
       osc.type = "square";
       osc.frequency.value = accent ? 2200 : 1500;
-      const gain = this._envGain(time, 0.002, accent ? 0.07 : 0.045, accent ? 0.55 : 0.35);
-      osc.connect(gain).connect(this.masterGain);
+      const gain = this._envGain(time, 0.002, accent ? 0.07 : 0.045, accent ? 0.85 : 0.6);
+      osc.connect(gain).connect(this.outputGain);
       osc.start(time);
       osc.stop(time + 0.1);
       return;
@@ -281,8 +298,8 @@ class AudioEngine {
     const osc = ctx.createOscillator();
     osc.type = "sine";
     osc.frequency.value = accent ? 1600 : 1000;
-    const gain = this._envGain(time, 0.001, accent ? 0.08 : 0.05, accent ? 1 : 0.7);
-    osc.connect(gain).connect(this.masterGain);
+    const gain = this._envGain(time, 0.001, accent ? 0.08 : 0.05, accent ? 1.3 : 1);
+    osc.connect(gain).connect(this.outputGain);
     osc.start(time);
     osc.stop(time + 0.1);
   }
@@ -290,19 +307,26 @@ class AudioEngine {
   playSubClick(time, timbre = "default") {
     const ctx = this.ctx;
     if (timbre === "wood") {
-      this._karplusHit(time, { freq: 1400, decay: 0.03, peak: 0.35, damping: 4000, feedback: 0.55 });
+      this._karplusHit(time, {
+        freq: 1400,
+        decay: 0.03,
+        peak: 0.55,
+        damping: 4000,
+        feedback: 0.55,
+        destination: this.outputGain,
+      });
       return;
     }
     if (timbre === "cowbell") {
-      this._cowbellHit(time, 0.25, false);
+      this._cowbellHit(time, 0.45, false, this.outputGain);
       return;
     }
     if (timbre === "beep") {
       const osc = ctx.createOscillator();
       osc.type = "square";
       osc.frequency.value = 1900;
-      const gain = this._envGain(time, 0.002, 0.025, 0.2);
-      osc.connect(gain).connect(this.masterGain);
+      const gain = this._envGain(time, 0.002, 0.025, 0.35);
+      osc.connect(gain).connect(this.outputGain);
       osc.start(time);
       osc.stop(time + 0.06);
       return;
@@ -310,34 +334,45 @@ class AudioEngine {
     const osc = ctx.createOscillator();
     osc.type = "sine";
     osc.frequency.value = 1800;
-    const gain = this._envGain(time, 0.001, 0.03, 0.25);
-    osc.connect(gain).connect(this.masterGain);
+    const gain = this._envGain(time, 0.001, 0.03, 0.45);
+    osc.connect(gain).connect(this.outputGain);
     osc.start(time);
     osc.stop(time + 0.05);
   }
 
-  // Classic 808/909-style cowbell: two square oscillators at a fixed ratio,
-  // summed and bandpassed.
-  _cowbellHit(time, peak, accent) {
+  // Real cowbell hit (Roland TR-08, see samples.js) when available; falls
+  // back to a classic 808-style two-square-oscillator synth cowbell.
+  _cowbellHit(time, peak, accent, destination) {
+    const dest = destination || this.masterGain;
+    const buffer = this.buffers.cowbell;
+    if (buffer) {
+      const ctx = this.ctx;
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = this._jitter(accent ? 1.03 : 1, 0.015);
+      const gain = ctx.createGain();
+      gain.gain.value = this._jitter(peak, 0.05);
+      src.connect(gain).connect(dest);
+      src.start(time);
+      return;
+    }
     const ctx = this.ctx;
-    const f1 = accent ? 900 : 800;
-    const f2 = f1 * 1.48;
+    const detune = accent ? 1.03 : 1;
     const sum = ctx.createGain();
-    sum.gain.value = 0.5;
-    [f1, f2].forEach((f) => {
+    sum.gain.value = 0.55;
+    [587, 845].forEach((f) => {
       const osc = ctx.createOscillator();
       osc.type = "square";
-      osc.frequency.value = f;
+      osc.frequency.value = f * detune;
       osc.connect(sum);
       osc.start(time);
-      osc.stop(time + 0.15);
+      osc.stop(time + 0.3);
     });
-    const bp = ctx.createBiquadFilter();
-    bp.type = "bandpass";
-    bp.frequency.value = 1500;
-    bp.Q.value = 1;
-    const env = this._envGain(time, 0.001, accent ? 0.12 : 0.08, peak);
-    sum.connect(bp).connect(env).connect(this.masterGain);
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = 350;
+    const env = this._envGain(time, 0.001, accent ? 0.2 : 0.14, peak);
+    sum.connect(hp).connect(env).connect(dest);
   }
 
   _synthKick(time) {
@@ -567,13 +602,14 @@ class AudioEngine {
     if (!this._playSample(key, time, { pan: isFloor ? 0.35 : -0.15 })) this._synthTom(time, isFloor);
   }
 
+  // Also dry/reverb-free — sticking practice is a timing reference too.
   playStick(time, isRight) {
     const ctx = this.ctx;
     const osc = ctx.createOscillator();
     osc.type = "triangle";
     osc.frequency.value = isRight ? 900 : 600;
     const gain = this._envGain(time, 0.001, 0.06, 0.8);
-    osc.connect(gain).connect(this.masterGain);
+    osc.connect(gain).connect(this.outputGain);
     osc.start(time);
     osc.stop(time + 0.08);
   }
@@ -688,6 +724,9 @@ const timeSignatureSel = document.getElementById("timeSignature");
 const subdivisionSel = document.getElementById("subdivision");
 const accentToggle = document.getElementById("accentToggle");
 const metronomeTimbreSel = document.getElementById("metronomeTimbre");
+const metronomeSwingTypeSel = document.getElementById("metronomeSwingType");
+const metronomeSwingAmountSlider = document.getElementById("metronomeSwingAmount");
+const metronomeSwingAmountValue = document.getElementById("metronomeSwingAmountValue");
 const volumeSlider = document.getElementById("volumeSlider");
 const beatLights = document.getElementById("beatLights");
 const metronomePlayBtn = document.getElementById("metronomePlay");
@@ -697,6 +736,11 @@ let metronomeScheduler = null;
 let metronomeBeatEls = [];
 let metronomeTimbre = localStorage.getItem("drumapp_metronome_timbre") || "default";
 metronomeTimbreSel.value = metronomeTimbre;
+let metronomeSwingType = localStorage.getItem("drumapp_metronome_swing_type") || "none";
+let metronomeSwingAmount = parseInt(localStorage.getItem("drumapp_metronome_swing_amount") || "62", 10);
+metronomeSwingTypeSel.value = metronomeSwingType;
+metronomeSwingAmountSlider.value = metronomeSwingAmount;
+metronomeSwingAmountValue.textContent = `${metronomeSwingAmount}%`;
 
 function setBpm(v, { syncSlider = true, syncInput = true } = {}) {
   v = Math.min(300, Math.max(30, Math.round(v)));
@@ -752,6 +796,15 @@ metronomeTimbreSel.addEventListener("change", () => {
   metronomeTimbre = metronomeTimbreSel.value;
   localStorage.setItem("drumapp_metronome_timbre", metronomeTimbre);
 });
+metronomeSwingTypeSel.addEventListener("change", () => {
+  metronomeSwingType = metronomeSwingTypeSel.value;
+  localStorage.setItem("drumapp_metronome_swing_type", metronomeSwingType);
+});
+metronomeSwingAmountSlider.addEventListener("input", () => {
+  metronomeSwingAmount = parseInt(metronomeSwingAmountSlider.value, 10);
+  metronomeSwingAmountValue.textContent = `${metronomeSwingAmount}%`;
+  localStorage.setItem("drumapp_metronome_swing_amount", metronomeSwingAmount);
+});
 
 let tapTimes = [];
 tapTempoBtn.addEventListener("click", () => {
@@ -766,18 +819,39 @@ tapTempoBtn.addEventListener("click", () => {
   }
 });
 
+// Delays the "off" subdivision(s) within a beat, in step units (same
+// tail-alignment math as the rhythm tab's swing) — only meaningful when the
+// subdivision resolution actually has an off-8th (sub 2 or 4) or off-16th
+// (sub 4) position to delay; otherwise it's a no-op.
+function metronomeSwingOffset(stepInBeat, sub) {
+  if (metronomeSwingType === "none") return 0;
+  const r = metronomeSwingAmount / 100;
+  if (metronomeSwingType === "8th") {
+    if (sub === 2 && stepInBeat === 1) return 2 * r - 1;
+    if (sub === 4 && stepInBeat === 2) return 2 * (2 * r - 1);
+    return 0;
+  }
+  if (metronomeSwingType === "16th") {
+    if (sub === 4 && stepInBeat % 2 === 1) return 2 * r - 1;
+    return 0;
+  }
+  return 0;
+}
+
 function metronomeOnStep(step, time) {
   const sub = parseInt(subdivisionSel.value, 10);
   const beats = parseInt(timeSignatureSel.value, 10);
   const isBeat = step % sub === 0;
   const beatIndex = Math.floor(step / sub) % beats;
+  const stepInBeat = step % sub;
+  const t = time + metronomeSwingOffset(stepInBeat, sub) * stepDurationForMetronome();
 
   if (isBeat) {
     const accent = accentToggle.checked && beatIndex === 0;
-    audioEngine.playClick(time, accent, metronomeTimbre);
-    flashBeatLight(beatIndex, time);
+    audioEngine.playClick(t, accent, metronomeTimbre);
+    flashBeatLight(beatIndex, t);
   } else {
-    audioEngine.playSubClick(time, metronomeTimbre);
+    audioEngine.playSubClick(t, metronomeTimbre);
   }
 }
 
@@ -1460,7 +1534,8 @@ function renderFillGrid() {
   });
 }
 
-/* ---- Drum notation preview (simplified staff, no beaming/flags) ---- */
+/* ---- Drum notation preview: beams/flags show note value (8th vs 16th etc.),
+   not just a plain stem, so busy patterns actually read as rhythm. ---- */
 const STAFF_LEFT = 34;
 const STAFF_STEP_W = 30;
 const STAFF_LINES_Y = [60, 70, 80, 90, 100];
@@ -1494,25 +1569,144 @@ function swingOffsetSteps(step) {
   return 0;
 }
 
-function noteHeadSVG(x, y, track, dim) {
-  const stemX = x + 5;
-  const cls = dim ? "staff-note-head staff-note-dim" : "staff-note-head";
-  return (
-    `<ellipse class="${cls}" cx="${x}" cy="${y}" rx="5" ry="4" style="fill:var(--${track});stroke:var(--${track})"></ellipse>` +
-    `<line class="staff-stem${dim ? " staff-note-dim" : ""}" x1="${stemX}" y1="${y}" x2="${stemX}" y2="${y - 24}" style="stroke:var(--${track})"></line>`
-  );
+// Number of beams/flags a note gets based on the gap (in steps) to the next
+// hit in the same voice: 1 step apart = 16th (2 flags), 2 apart = 8th (1
+// flag), 4+ apart = quarter or longer (plain stem, 0 flags).
+function flagCountForGap(gap) {
+  if (gap <= 1) return 2;
+  if (gap === 2) return 1;
+  return 0;
 }
 
-function xMarkSVG(x, y, track, open, dim) {
+// Splits one track's active steps into beamed runs (2+ evenly-spaced hits
+// within the same beat, drawn with a shared beam bar) and leftover singles
+// (drawn with individual flags). Real engraving software infers this from
+// context; this is a practical approximation good enough for straight/simple
+// syncopated patterns, which covers the vast majority of what a practice
+// grid produces.
+function computeNoteGroups(activeSteps) {
+  const beamed = [];
+  const flaggedSet = new Set(activeSteps);
+  let i = 0;
+  while (i < activeSteps.length) {
+    const beat = Math.floor(activeSteps[i] / 4);
+    let j = i;
+    let gap = null;
+    while (j + 1 < activeSteps.length) {
+      const next = activeSteps[j + 1];
+      if (Math.floor(next / 4) !== beat) break;
+      const g = next - activeSteps[j];
+      if (g > 2) break;
+      if (gap === null) gap = g;
+      else if (g !== gap) break;
+      j++;
+    }
+    if (j > i) {
+      const steps = activeSteps.slice(i, j + 1);
+      beamed.push({ steps, flagCount: gap === 1 ? 2 : 1 });
+      steps.forEach((s) => flaggedSet.delete(s));
+      i = j + 1;
+    } else {
+      i++;
+    }
+  }
+  const flagged = [...flaggedSet].map((step) => {
+    const idx = activeSteps.indexOf(step);
+    const next = activeSteps[idx + 1];
+    const gap = next !== undefined ? next - step : 4;
+    return { step, flagCount: flagCountForGap(gap) };
+  });
+  return { beamed, flagged };
+}
+
+function noteHeadGlyph(x, y, track, dim) {
+  const cls = dim ? "staff-note-head staff-note-dim" : "staff-note-head";
+  return `<ellipse class="${cls}" cx="${x}" cy="${y}" rx="5" ry="4" style="fill:var(--${track});stroke:var(--${track})"></ellipse>`;
+}
+
+function xMarkGlyph(x, y, track, open, dim) {
   const s = 4.5;
   const dimCls = dim ? " staff-note-dim" : "";
   let html =
     `<line class="staff-note-x${dimCls}" x1="${x - s}" y1="${y - s}" x2="${x + s}" y2="${y + s}" style="stroke:var(--${track})"></line>` +
-    `<line class="staff-note-x${dimCls}" x1="${x - s}" y1="${y + s}" x2="${x + s}" y2="${y - s}" style="stroke:var(--${track})"></line>` +
-    `<line class="staff-stem${dimCls}" x1="${x + s}" y1="${y}" x2="${x + s}" y2="${y + 20}" style="stroke:var(--${track})"></line>`;
+    `<line class="staff-note-x${dimCls}" x1="${x - s}" y1="${y + s}" x2="${x + s}" y2="${y - s}" style="stroke:var(--${track})"></line>`;
   if (open) {
     html += `<circle class="staff-note-o${dimCls}" cx="${x}" cy="${y - 9}" r="3" style="stroke:var(--${track})"></circle>`;
   }
+  return html;
+}
+
+function stemGlyph(stemX, y, tipY, track, dim) {
+  const cls = dim ? "staff-stem staff-note-dim" : "staff-stem";
+  return `<line class="${cls}" x1="${stemX}" y1="${y}" x2="${stemX}" y2="${tipY}" style="stroke:var(--${track})"></line>`;
+}
+
+// stemDir: -1 = stem tip above the notehead (flags/beams hook down toward
+// it), 1 = stem tip below the notehead (flags/beams hook up toward it).
+function flagGlyphs(stemX, tipY, stemDir, flagCount, track, dim) {
+  const cls = dim ? "staff-flag staff-note-dim" : "staff-flag";
+  let html = "";
+  for (let f = 0; f < flagCount; f++) {
+    const baseY = tipY - stemDir * f * 6;
+    const hookY = baseY - stemDir * 8;
+    const midX = stemX + 7;
+    const midY = baseY - stemDir * 3;
+    html += `<path class="${cls}" d="M${stemX} ${baseY} Q${midX} ${midY} ${stemX + 6} ${hookY}" style="stroke:var(--${track})"></path>`;
+  }
+  return html;
+}
+
+function beamGlyphs(x1, x2, tipY, stemDir, flagCount, track, dim) {
+  const cls = dim ? "staff-beam staff-note-dim" : "staff-beam";
+  let html = "";
+  for (let b = 0; b < flagCount; b++) {
+    const beamY = tipY - stemDir * b * 5;
+    html += `<line class="${cls}" x1="${x1}" y1="${beamY}" x2="${x2}" y2="${beamY}" style="stroke:var(--${track})"></line>`;
+  }
+  return html;
+}
+
+function renderTrackNotes(pattern, track, cutoff) {
+  const spec = TRACK_STAFF[track];
+  const stemDir = spec.shape === "x" ? 1 : -1;
+  const stemLen = spec.shape === "x" ? 20 : 24;
+  const noteOffset = spec.shape === "x" ? 4.5 : 5;
+  const tipY = spec.y + stemDir * stemLen;
+
+  const activeSteps = [];
+  for (let step = 0; step < 16; step++) {
+    if (pattern[track][step]) activeSteps.push(step);
+  }
+  if (activeSteps.length === 0) return "";
+
+  let html = "";
+
+  activeSteps.forEach((step) => {
+    const x = noteX(step);
+    const dim = step < cutoff;
+    html += spec.shape === "x" ? xMarkGlyph(x, spec.y, track, !!spec.open, dim) : noteHeadGlyph(x, spec.y, track, dim);
+  });
+
+  activeSteps.forEach((step) => {
+    const stemX = noteX(step) + noteOffset;
+    html += stemGlyph(stemX, spec.y, tipY, track, step < cutoff);
+  });
+
+  const { beamed, flagged } = computeNoteGroups(activeSteps);
+
+  beamed.forEach((group) => {
+    const dim = group.steps.every((s) => s < cutoff);
+    const x1 = noteX(group.steps[0]) + noteOffset;
+    const x2 = noteX(group.steps[group.steps.length - 1]) + noteOffset;
+    html += beamGlyphs(x1, x2, tipY, stemDir, group.flagCount, track, dim);
+  });
+
+  flagged.forEach(({ step, flagCount }) => {
+    if (flagCount === 0) return;
+    const stemX = noteX(step) + noteOffset;
+    html += flagGlyphs(stemX, tipY, stemDir, flagCount, track, step < cutoff);
+  });
+
   return html;
 }
 
@@ -1535,16 +1729,9 @@ function buildStaffMarkup(pattern, playheadId, showSwingLabel, activeFromStep) {
     html += `<line class="staff-fill-cutoff" x1="${cx}" y1="${STAFF_TOP}" x2="${cx}" y2="${STAFF_BOTTOM}"></line>`;
   }
 
-  for (let step = 0; step < 16; step++) {
-    const x = noteX(step);
-    const dim = step < cutoff;
-    TRACKS.forEach((track) => {
-      if (!pattern[track][step]) return;
-      const spec = TRACK_STAFF[track];
-      if (spec.shape === "x") html += xMarkSVG(x, spec.y, track, !!spec.open, dim);
-      else html += noteHeadSVG(x, spec.y, track, dim);
-    });
-  }
+  TRACKS.forEach((track) => {
+    html += renderTrackNotes(pattern, track, cutoff);
+  });
 
   if (showSwingLabel && swingType !== "none") {
     html += `<text class="staff-swing-label" x="${STAFF_LEFT}" y="128">ハネ: ${swingType === "8th" ? "8分" : "16分"} (${swingAmount}%)</text>`;
