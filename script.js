@@ -341,7 +341,10 @@ class AudioEngine {
   }
 
   // Real acoustic cowbell hit (Latin Percussion, see samples.js) when
-  // available; falls back to a classic 808-style synth cowbell.
+  // available; falls back to a classic 808-style synth cowbell. The raw
+  // recording rings out like a real percussion hit, so it's reshaped with a
+  // fast attack/decay envelope and a highpass to cut the tail into the
+  // tight, clicky "metronome app" cowbell tone rather than a roomy sample.
   _cowbellHit(time, peak, accent, destination) {
     const dest = destination || this.masterGain;
     const buffer = this.buffers.cowbell;
@@ -349,11 +352,14 @@ class AudioEngine {
       const ctx = this.ctx;
       const src = ctx.createBufferSource();
       src.buffer = buffer;
-      src.playbackRate.value = this._jitter(accent ? 1.03 : 1, 0.015);
-      const gain = ctx.createGain();
-      gain.gain.value = this._jitter(peak, 0.05);
-      src.connect(gain).connect(dest);
+      src.playbackRate.value = this._jitter(accent ? 1.05 : 1, 0.015);
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = this._jitter(260, 0.05);
+      const env = this._envGain(time, 0.0006, accent ? 0.13 : 0.09, this._jitter(peak, 0.05));
+      src.connect(hp).connect(env).connect(dest);
       src.start(time);
+      src.stop(time + 0.35);
       return;
     }
     const ctx = this.ctx;
