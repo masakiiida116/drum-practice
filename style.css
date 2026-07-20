@@ -357,6 +357,10 @@ input[type="range"]::-moz-range-thumb {
   transition: background 0.05s, transform 0.05s, box-shadow 0.1s;
 }
 
+.beat-light.accent {
+  border: 2px solid var(--accent);
+}
+
 .beat-light.on {
   background: var(--accent);
   transform: scale(1.15);
@@ -442,6 +446,35 @@ input[type="range"]::-moz-range-thumb {
 
 .grid-cell.beat-start {
   border-left: 2px solid var(--text-dim);
+}
+
+.grid-cell.measure-head {
+  border-left: 2px solid var(--accent);
+}
+
+.grid-ruler-cell {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 16px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  border-left: 2px solid transparent;
+}
+
+.grid-ruler-cell.beat-start {
+  border-left-color: var(--text-dim);
+}
+
+.grid-ruler-cell.measure-head {
+  color: var(--accent);
+  border-left-color: var(--accent);
+  font-size: 0.72rem;
+}
+
+.grid-ruler-label {
+  color: var(--text-dim);
 }
 
 .grid-cell[data-track="kick"].active { background: var(--kick); }
@@ -605,6 +638,17 @@ input[type="range"]::-moz-range-thumb {
 
 .staff-stem {
   stroke-width: 1.6;
+}
+
+.staff-beam {
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.staff-flag {
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  fill: none;
 }
 
 .staff-note-x {

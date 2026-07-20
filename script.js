@@ -1494,6 +1494,25 @@ function loadRhythmState() {
 
 function renderGridInto(containerEl, pattern, activeFromStep, onCellToggled) {
   containerEl.innerHTML = "";
+
+  const rulerLabel = document.createElement("div");
+  rulerLabel.className = "grid-label grid-ruler-label";
+  containerEl.appendChild(rulerLabel);
+  for (let step = 0; step < 16; step++) {
+    const tick = document.createElement("div");
+    tick.className = "grid-ruler-cell";
+    if (step % 4 === 0) {
+      tick.classList.add("beat-start");
+      if (step === 0) {
+        tick.classList.add("measure-head");
+        tick.textContent = "頭";
+      } else {
+        tick.textContent = String(step / 4 + 1);
+      }
+    }
+    containerEl.appendChild(tick);
+  }
+
   TRACKS.forEach((track) => {
     const label = document.createElement("div");
     label.className = "grid-label";
@@ -1504,6 +1523,7 @@ function renderGridInto(containerEl, pattern, activeFromStep, onCellToggled) {
       const cell = document.createElement("div");
       cell.className = "grid-cell";
       if (step % 4 === 0) cell.classList.add("beat-start");
+      if (step === 0) cell.classList.add("measure-head");
       if (step < activeFromStep) cell.classList.add("grid-cell-inactive");
       cell.dataset.track = track;
       cell.dataset.step = step;
