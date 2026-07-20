@@ -340,8 +340,8 @@ class AudioEngine {
     osc.stop(time + 0.05);
   }
 
-  // Real cowbell hit (Roland TR-08, see samples.js) when available; falls
-  // back to a classic 808-style two-square-oscillator synth cowbell.
+  // Real acoustic cowbell hit (Latin Percussion, see samples.js) when
+  // available; falls back to a classic 808-style synth cowbell.
   _cowbellHit(time, peak, accent, destination) {
     const dest = destination || this.masterGain;
     const buffer = this.buffers.cowbell;
